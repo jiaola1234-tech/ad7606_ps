@@ -1,0 +1,94 @@
+# ============================================================
+# AD7606 + Zynq PS 工程 —— Git 忽略规则
+#
+# 原则：只提交可读、可复现的源文件与必要的硬件交付物；
+#       所有可再生/体积巨大的中间产物一律不进仓库。
+#       原始文件不会被删除，仅是 git 不跟踪。
+# ============================================================
+
+# ---------- 操作系统 / 编辑器 ----------
+Thumbs.db
+desktop.ini
+.DS_Store
+.vs/
+.vscode/
+.idea/
+*.swp
+*~
+*.bak
+*.tmp
+
+# ---------- 压缩备份包（体积巨大，另行归档） ----------
+*.rar
+*.zip
+*.7z
+*.tar
+*.gz
+
+# ---------- Python 虚拟环境（可由 requirements.txt 重建） ----------
+.venv/
+venv/
+env/
+.pack_venv/
+.run_venv/
+Lib/
+Scripts/
+site-packages/
+
+# ---------- Python 缓存 / 构建产物 ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# ---------- PyInstaller / Electron 等打包输出 ----------
+build/
+dist/
+*.pkg
+*.spec.bak
+
+# ---------- Vivado 工程自动生成目录（可由工程重新生成） ----------
+# .cache  IP 缓存
+# .gen    IP 输出产品
+# .hw     硬件平台生成物
+# .runs   综合/实现 run 目录
+# .sim仿真 run 目录
+# .tmp    临时文件
+*.cache/
+*.gen/
+*.hw/
+*.runs/
+*.sim/
+*.tmp/
+*.backup/
+*.backup.jou
+*.backup.log
+*.jou
+*.log
+*.str
+*.ip_user_files/
+.Xil/
+vivado_*.str
+*.dcp
+vivado*.jou
+vivado*.log
+vivado*.backup.*
+
+# ---------- Vitis / Eclipse (Xilinx CDT) ----------
+.metadata/
+*.metadata.deadlock_backup_*/
+RemoteSystemsTempFiles/
+**/Debug/
+**/Release/
+*.launch
+*.log
+
+# ---------- 交付二进制（体积大，如需可解除注释） ----------
+# *.bit
+# *.bin
+# *.xsa
+
+# ---------- 上位机打包后独立依赖目录 ----------
+# 如需提交请单独评估体积，此处默认忽略
+# 上位机/打包后独立可用及其所需依赖/

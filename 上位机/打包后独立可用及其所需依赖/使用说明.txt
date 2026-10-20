@@ -1,0 +1,23 @@
+声纳流量计上位机 - 独立运行版
+
+1. 运行环境
+   - Windows 64 位系统。
+   - 直接双击 SonarFlowMeterHost.exe，无需安装 Python，也不需要复制虚拟环境。
+   - 程序带管理员权限清单，Windows 可能显示用户账户控制（UAC）确认窗口。
+
+2. MATLAB 算法
+   - 程序内已封装当前版本的 ana96.m，同时在本目录保留一份可查看、可替换的算法文件。
+   - 未安装 MATLAB 时，软件会使用 Python 后端，采集、显示和 CSV 导出仍可使用。
+   - 需要真实 MATLAB 算法及 MATLAB 图窗时，目标电脑必须另行安装并授权 MATLAB；MATLAB 本体及其工具箱不能随本程序分发。
+   - 更换算法时，可在软件中点击“选择 MATLAB 算法”，选择新的 .m 文件。
+
+3. 文件说明
+   - SonarFlowMeterHost.exe：已打包的独立可执行程序，Python、PySide6、NumPy 等运行依赖已封装。
+   - ana96.m：MATLAB 算法源文件，供查看或手动选择。
+   - SHA256.txt：可执行文件完整性校验值。
+
+4. 完整性校验（可选）
+   在 PowerShell 中执行：
+   Get-FileHash .\SonarFlowMeterHost.exe -Algorithm SHA256
+
+   输出应与 SHA256.txt 一致。

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="ASCII"?>
+<sdkproject:SdkProject xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:sdkproject="http://www.xilinx.com/sdkproject" name="0804_1_" location="C:/Users/DELL/Desktop/finalversion/vitis/0804_1_" platform="C:/Users/DELL/Desktop/finalversion/vitis/0804_1/export/0804_1/0804_1.xpfm" platformUID="xilinx:::0.0(custom)" systemProject="0804_1__system" sysConfig="0804_1" runtime="C/C++" cpu="standalone_domain" cpuInstance="ps7_cortexa9_0" os="standalone" mssSignature="e9c33f5f139febc7a97d2b6fabc430c0">
+  <configuration name="Debug" id="xilinx.gnu.armv7.exe.debug.755551974">
+    <configBuildOptions xsi:type="sdkproject:SdkOptions"/>
+    <lastBuildOptions xsi:type="sdkproject:SdkOptions"/>
+  </configuration>
+  <configuration name="Release" id="xilinx.gnu.armv7.exe.release.241388411" dirty="true">
+    <configBuildOptions xsi:type="sdkproject:SdkOptions"/>
+  </configuration>
+  <template appTemplateName="empty_application"/>
+</sdkproject:SdkProject>

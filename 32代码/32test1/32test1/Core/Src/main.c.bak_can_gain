@@ -1,0 +1,410 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright (c) 2026 STMicroelectronics.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"
+#include "adc.h"
+#include "can.h"
+#include "usart.h"
+#include "gpio.h"
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+#include <stdio.h>
+#include <string.h>
+/* USER CODE END Includes */
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+
+#define CAN_SELF_STD_ID      0x100U
+#define CAN_TX_PERIOD_MS     3000U
+
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+
+/* USER CODE BEGIN PV */
+
+static uint32_t last_can_tx_tick = 0U;
+
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+/* USER CODE BEGIN PFP */
+
+static void CAN_SelfTest_Init(void);
+static void CAN_SelfTest_Task(void);
+static void CAN_SelfTest_SendFrame(void);
+static void CAN_SelfTest_ReceiveProcess(void);
+static void CAN_SelfTest_ParseFrame(const CAN_RxHeaderTypeDef *rx_header, uint8_t *rx_data);
+static void CAN_SelfTest_PrintRegs(const char *tag);
+static void CAN_SelfTest_AbortTx(const char *reason);
+int __io_putchar(int ch);
+
+/* USER CODE END PFP */
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+
+/* USER CODE END 0 */
+
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
+int main(void)
+{
+
+  /* USER CODE BEGIN 1 */
+
+  /* USER CODE END 1 */
+
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
+
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
+  SystemClock_Config();
+
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_ADC1_Init();
+  MX_CAN_Init();
+  MX_USART1_UART_Init();
+  /* USER CODE BEGIN 2 */
+
+  printf("\r\n");
+  printf("====================================\r\n");
+  printf("STM32 CAN LoopBack Self Test Start\r\n");
+  printf("====================================\r\n");
+
+  CAN_SelfTest_Init();
+
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+
+  while (1)
+  {
+    CAN_SelfTest_Task();
+    CAN_SelfTest_ReceiveProcess();
+
+    HAL_Delay(10);
+
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+  }
+
+  /* USER CODE END 3 */
+}
+
+/**
+  * @brief System Clock Configuration
+  * @retval None
+  */
+void SystemClock_Config(void)
+{
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
+
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
+  */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Initializes the CPU, AHB and APB buses clocks
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC;
+  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV6;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/* USER CODE BEGIN 4 */
+int __io_putchar(int ch)
+{
+  HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1U, HAL_MAX_DELAY);
+  return ch;
+}
+
+static void CAN_SelfTest_Init(void)
+{
+  CAN_FilterTypeDef filter;
+
+  printf("CAN init begin\r\n");
+
+  filter.FilterBank = 0;
+  filter.FilterMode = CAN_FILTERMODE_IDMASK;
+  filter.FilterScale = CAN_FILTERSCALE_32BIT;
+  filter.FilterIdHigh = 0x0000U;
+  filter.FilterIdLow = 0x0000U;
+  filter.FilterMaskIdHigh = 0x0000U;
+  filter.FilterMaskIdLow = 0x0000U;
+  filter.FilterFIFOAssignment = CAN_FILTER_FIFO0;
+  filter.FilterActivation = ENABLE;
+  filter.SlaveStartFilterBank = 14;
+
+  if (HAL_CAN_ConfigFilter(&hcan, &filter) != HAL_OK)
+  {
+    printf("CAN filter failed, error=0x%08lX\r\n", (unsigned long)HAL_CAN_GetError(&hcan));
+    Error_Handler();
+  }
+  printf("CAN filter ok\r\n");
+
+  if (HAL_CAN_Start(&hcan) != HAL_OK)
+  {
+    printf("CAN start failed, error=0x%08lX\r\n", (unsigned long)HAL_CAN_GetError(&hcan));
+    Error_Handler();
+  }
+  printf("CAN start ok\r\n");
+  CAN_SelfTest_PrintRegs("after start");
+
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_RESET);
+  last_can_tx_tick = HAL_GetTick();
+
+  CAN_SelfTest_SendFrame();
+}
+
+static void CAN_SelfTest_Task(void)
+{
+  uint32_t now_tick = HAL_GetTick();
+
+  if ((now_tick - last_can_tx_tick) >= CAN_TX_PERIOD_MS)
+  {
+    last_can_tx_tick = now_tick;
+    CAN_SelfTest_SendFrame();
+  }
+}
+
+static void CAN_SelfTest_SendFrame(void)
+{
+  CAN_TxHeaderTypeDef tx_header;
+  uint32_t tx_mailbox;
+  uint32_t wait_start_tick;
+  uint8_t tx_data[1] = {0x55U};
+
+  tx_header.StdId = CAN_SELF_STD_ID;
+  tx_header.ExtId = 0x00000000U;
+  tx_header.IDE = CAN_ID_STD;
+  tx_header.RTR = CAN_RTR_DATA;
+  tx_header.DLC = 1U;
+  tx_header.TransmitGlobalTime = DISABLE;
+
+  printf("\r\nTX request\r\n");
+  printf("TX free mailboxes before add = %lu\r\n", (unsigned long)HAL_CAN_GetTxMailboxesFreeLevel(&hcan));
+  printf("RX FIFO0 level before add = %lu\r\n", (unsigned long)HAL_CAN_GetRxFifoFillLevel(&hcan, CAN_RX_FIFO0));
+  CAN_SelfTest_PrintRegs("before TX add");
+
+  if (HAL_CAN_GetTxMailboxesFreeLevel(&hcan) == 0U)
+  {
+    printf("TX mailbox full, error=0x%08lX\r\n", (unsigned long)HAL_CAN_GetError(&hcan));
+    CAN_SelfTest_PrintRegs("mailbox full");
+    CAN_SelfTest_AbortTx("mailbox full");
+    return;
+  }
+
+  if (HAL_CAN_AddTxMessage(&hcan, &tx_header, tx_data, &tx_mailbox) != HAL_OK)
+  {
+    printf("TX add failed, error=0x%08lX\r\n", (unsigned long)HAL_CAN_GetError(&hcan));
+    return;
+  }
+
+  printf("TX queued id=0x%03lX dlc=%lu data=0x%02X mailbox=0x%08lX\r\n",
+         (unsigned long)tx_header.StdId,
+         (unsigned long)tx_header.DLC,
+         tx_data[0],
+         (unsigned long)tx_mailbox);
+  CAN_SelfTest_PrintRegs("after TX add");
+
+  wait_start_tick = HAL_GetTick();
+  while (HAL_CAN_IsTxMessagePending(&hcan, tx_mailbox) != 0U)
+  {
+    if ((HAL_GetTick() - wait_start_tick) > 100U)
+    {
+      printf("TX complete timeout, error=0x%08lX\r\n", (unsigned long)HAL_CAN_GetError(&hcan));
+      CAN_SelfTest_PrintRegs("TX timeout");
+      CAN_SelfTest_AbortTx("TX timeout");
+      return;
+    }
+  }
+
+  printf("TX complete\r\n");
+  HAL_Delay(2U);
+  CAN_SelfTest_PrintRegs("after TX complete");
+  printf("RX FIFO0 level after TX complete = %lu\r\n",
+         (unsigned long)HAL_CAN_GetRxFifoFillLevel(&hcan, CAN_RX_FIFO0));
+}
+
+static void CAN_SelfTest_ReceiveProcess(void)
+{
+  CAN_RxHeaderTypeDef rx_header;
+  uint8_t rx_data[8] = {0};
+
+  while (HAL_CAN_GetRxFifoFillLevel(&hcan, CAN_RX_FIFO0) > 0U)
+  {
+    if (HAL_CAN_GetRxMessage(&hcan, CAN_RX_FIFO0, &rx_header, rx_data) != HAL_OK)
+    {
+      printf("RX failed, error=0x%08lX\r\n", (unsigned long)HAL_CAN_GetError(&hcan));
+      return;
+    }
+
+    printf("RX id=0x%03lX extid=0x%08lX ide=%lu rtr=%lu dlc=%lu data=",
+           (unsigned long)rx_header.StdId,
+           (unsigned long)rx_header.ExtId,
+           (unsigned long)rx_header.IDE,
+           (unsigned long)rx_header.RTR,
+           (unsigned long)rx_header.DLC);
+
+    for (uint8_t i = 0U; i < rx_header.DLC; i++)
+    {
+      printf("0x%02X ", rx_data[i]);
+    }
+    printf("\r\n");
+
+    CAN_SelfTest_ParseFrame(&rx_header, rx_data);
+  }
+}
+
+static void CAN_SelfTest_ParseFrame(const CAN_RxHeaderTypeDef *rx_header, uint8_t *rx_data)
+{
+  if ((rx_header->IDE != CAN_ID_STD) ||
+      (rx_header->RTR != CAN_RTR_DATA) ||
+      (rx_header->StdId != CAN_SELF_STD_ID) ||
+      (rx_header->DLC != 1U) ||
+      (rx_data[0] != 0x55U))
+  {
+    printf("RX ignored\r\n");
+    return;
+  }
+
+  HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_7);
+  printf("CAN self test ok, PB7 state=%lu\r\n", (unsigned long)HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7));
+}
+
+static void CAN_SelfTest_PrintRegs(const char *tag)
+{
+  printf("[%s] MCR=0x%08lX MSR=0x%08lX TSR=0x%08lX RF0R=0x%08lX RF1R=0x%08lX IER=0x%08lX ESR=0x%08lX BTR=0x%08lX\r\n",
+         tag,
+         (unsigned long)hcan.Instance->MCR,
+         (unsigned long)hcan.Instance->MSR,
+         (unsigned long)hcan.Instance->TSR,
+         (unsigned long)hcan.Instance->RF0R,
+         (unsigned long)hcan.Instance->RF1R,
+         (unsigned long)hcan.Instance->IER,
+         (unsigned long)hcan.Instance->ESR,
+         (unsigned long)hcan.Instance->BTR);
+}
+
+static void CAN_SelfTest_AbortTx(const char *reason)
+{
+  printf("Abort TX mailboxes: %s\r\n", reason);
+
+  if (HAL_CAN_AbortTxRequest(&hcan, CAN_TX_MAILBOX0 | CAN_TX_MAILBOX1 | CAN_TX_MAILBOX2) != HAL_OK)
+  {
+    printf("Abort TX failed, error=0x%08lX\r\n", (unsigned long)HAL_CAN_GetError(&hcan));
+  }
+
+  HAL_Delay(2U);
+  CAN_SelfTest_PrintRegs("after abort");
+  printf("TX free mailboxes after abort = %lu\r\n", (unsigned long)HAL_CAN_GetTxMailboxesFreeLevel(&hcan));
+}
+
+/* USER CODE END 4 */
+
+/**
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
+void Error_Handler(void)
+{
+  /* USER CODE BEGIN Error_Handler_Debug */
+
+  printf("Error_Handler\r\n");
+
+  __disable_irq();
+
+  while (1)
+  {
+  }
+
+  /* USER CODE END Error_Handler_Debug */
+}
+#ifdef USE_FULL_ASSERT
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
+void assert_failed(uint8_t *file, uint32_t line)
+{
+  /* USER CODE BEGIN 6 */
+
+  printf("Assert failed: file %s, line %lu\r\n", file, line);
+
+  /* USER CODE END 6 */
+}
+#endif /* USE_FULL_ASSERT */

@@ -1,0 +1,29 @@
+源码目录说明
+
+目录结构：
+  ana96.m                 MATLAB 算法源码
+  flowmeter_host\app      上位机程序源码
+  flowmeter_host\tests    测试代码
+  flowmeter_host\tools    模拟数据发送工具
+  flowmeter_host\界面截图  开发和界面校验截图
+  flowmeter_host\.run_venv 本机即用 Python 3.11 开发环境
+
+开发依赖：
+  见 flowmeter_host\requirements.txt。
+
+在当前电脑直接运行源码：
+  1. cd flowmeter_host
+  2. 双击 运行源码.bat
+
+在其他电脑重建环境：
+  1. cd flowmeter_host
+  2. python -m venv .venv
+  3. .\.venv\Scripts\activate
+  4. python -m pip install -r requirements.txt
+  5. python main.py
+
+说明：
+  已保留并补全原目录中可启动的 .run_venv，源码测试和 GUI 初始化测试均应通过后再交付。
+  该环境绑定当前电脑的 C:\Users\DELL\anaconda3，不保证复制到其他电脑后可用。
+  原 .venv 指向不存在的 C:\Python313\python.exe，已损坏，因此未保留。
+  build、dist、__pycache__ 和 .idea 分别属于打包中间产物、缓存或 IDE 配置，未纳入源码目录。
