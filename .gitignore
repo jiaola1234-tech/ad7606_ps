@@ -83,6 +83,8 @@ vivado*.backup.*
 .metadata/
 *.metadata.deadlock_backup_*/
 RemoteSystemsTempFiles/
+# Vitis 工作台遥测日志（机器噪音，不应进版本库）
+.analytics
 **/Debug/
 **/Release/
 *.launch
