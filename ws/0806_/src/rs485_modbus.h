@@ -54,7 +54,6 @@ int rs485_modbus_clear_gain_apply(void);
 int rs485_modbus_clear_adaptive_gain(void);
 int rs485_modbus_write_gain_status(u16 gain_stage);
 int rs485_modbus_write_gain_target(u16 gain_stage);
-int rs485_modbus_write_temperature(s16 centi_celsius, u16 status);
 int rs485_modbus_read_calibration_coefficients(float *fit_k, float *fit_b);
 int rs485_modbus_read_manual_calibration_controls(
     Rs485ManualCalibrationControls *controls);

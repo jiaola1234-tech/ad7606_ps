@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .csv_exporter import export_snapshot
+from .csv_exporter import CsvRecordingWriter
 from .data_buffer import DataBuffer
 from .data_parser import DataParser
 from .matlab_interface import MatlabAlgorithmWorker
@@ -32,12 +32,14 @@ from .network_receiver import NetworkReceiver, ReceiverConfig
 from .settings import AppConfig, PLOT_REFRESH_MS, QUEUE_DRAIN_LIMIT
 from .theme import APP_STYLE
 from .widgets.control_panel import ControlPanel
+from .widgets.algorithm_plot_widget import AlgorithmPlotWidget
 from .widgets.plot_widget import PlotWidget
 
 
 class MainWindow(QMainWindow):
     log_signal = Signal(str)
-    matlab_result_signal = Signal(float, object)
+    matlab_result_signal = Signal(float, object, object)
+    csv_finished_signal = Signal(str, int, object)
 
     def __init__(self):
         super().__init__()
@@ -63,12 +65,14 @@ class MainWindow(QMainWindow):
         self._record_duration_seconds = 0.0
         self._record_start_timestamp: float | None = None
         self._record_path: str | None = None
-        self._record_timestamps: list[np.ndarray] = []
-        self._record_channels: list[np.ndarray] = []
-        self._record_flow_velocity: list[np.ndarray] = []
+        self._record_writer: CsvRecordingWriter | None = None
 
         self.control = ControlPanel()
         self.plot = PlotWidget()
+        # Apply the initial combo-box value explicitly; the signal connection
+        # is installed below, so the constructor's initial selection does not
+        # emit currentTextChanged.
+        self.matlab.set_backend(self.control.algorithm_backend_combo.currentText())
         self.log_view = QPlainTextEdit()
         self.log_view.setReadOnly(True)
         self.timeline = QSlider(Qt.Horizontal)
@@ -80,9 +84,12 @@ class MainWindow(QMainWindow):
         self.matlab_frame.setFrameShape(QFrame.StyledPanel)
         self.matlab_frame.setMinimumWidth(700)
         self.matlab_frame.setLayout(QVBoxLayout())
-        self.matlab_hint = QLabel("MATLAB 算法窗口将在这里嵌入")
+        self.python_algorithm_plot = AlgorithmPlotWidget()
+        self.matlab_hint = QLabel("等待算法数据...")
         self.matlab_hint.setAlignment(Qt.AlignCenter)
+        self.matlab_frame.layout().addWidget(self.python_algorithm_plot)
         self.matlab_frame.layout().addWidget(self.matlab_hint)
+        self.matlab_hint.hide()
 
         self._build_layout()
         self._connect_signals()
@@ -142,13 +149,14 @@ class MainWindow(QMainWindow):
         self.control.clear_requested.connect(self._clear_data)
         self.control.latest_requested.connect(self._go_latest)
         self.control.matlab_file_selected.connect(self._load_matlab)
-        self.control.algorithm_backend_changed.connect(self.matlab.set_backend)
+        self.control.algorithm_backend_changed.connect(self._set_algorithm_backend)
         self.control.record_start_requested.connect(self._start_recording)
         self.control.record_stop_requested.connect(self._stop_recording)
         self.timeline.sliderPressed.connect(self._timeline_pressed)
         self.timeline.valueChanged.connect(self._timeline_changed)
         self.log_signal.connect(self._log)
         self.matlab_result_signal.connect(self._on_matlab_result)
+        self.csv_finished_signal.connect(self._on_csv_writer_finished)
 
     def _load_default_algorithm(self) -> None:
         default_candidates = [
@@ -168,8 +176,15 @@ class MainWindow(QMainWindow):
     def _thread_log(self, message: str) -> None:
         self.log_signal.emit(message)
 
-    def _thread_matlab_result(self, velocity: float, hwnd: int | None) -> None:
-        self.matlab_result_signal.emit(velocity, hwnd)
+    def _thread_matlab_result(self, velocity: float, hwnd: int | None, plot_data=None) -> None:
+        self.matlab_result_signal.emit(velocity, hwnd, plot_data)
+
+    def _set_algorithm_backend(self, backend: str) -> None:
+        self.matlab.set_backend(backend)
+        if self.matlab.backend == "Python":
+            self._show_python_algorithm_plot()
+        else:
+            self.matlab_hint.setText("MATLAB 算法图窗将在这里嵌入")
 
     def _connect_network(self, config: ReceiverConfig) -> None:
         if self.matlab.loaded:
@@ -236,7 +251,8 @@ class MainWindow(QMainWindow):
             self._log(f"MATLAB 算法加载失败: {exc}")
 
     def _start_recording(self, duration_seconds: float) -> None:
-        if self._recording:
+        if self._recording or self._record_writer is not None:
+            self._log("上一次 CSV 仍在写入，请稍候")
             return
         path, _ = QFileDialog.getSaveFileName(self, "保存 CSV", "flowmeter_data.csv", "CSV Files (*.csv)")
         if not path:
@@ -245,45 +261,24 @@ class MainWindow(QMainWindow):
         self._record_duration_seconds = max(0.0, float(duration_seconds))
         self._record_start_timestamp = None
         self._record_path = path
-        self._record_timestamps = []
-        self._record_channels = []
-        self._record_flow_velocity = []
+        self._record_writer = CsvRecordingWriter(path, self._thread_csv_finished)
+        self._record_writer.start()
         text = "正在保存: 手动结束" if self._record_duration_seconds <= 0 else f"正在保存: 0.0/{self._record_duration_seconds:g} 秒"
         self.control.set_recording(True, text)
-        self._log(f"CSV 保存已开始: {path}")
+        self._log(f"CSV 保存已开始（采集与写盘并行）: {path}")
 
     def _stop_recording(self) -> None:
         if not self._recording:
             return
-        path = self._record_path
-        timestamps = np.concatenate(self._record_timestamps) if self._record_timestamps else np.empty(0, dtype=float)
-        channels = (
-            np.vstack(self._record_channels)
-            if self._record_channels
-            else np.empty((0, self.buffer.channels.shape[1]), dtype=float)
-        )
-        flow_velocity = (
-            np.concatenate(self._record_flow_velocity)
-            if self._record_flow_velocity
-            else np.empty(0, dtype=float)
-        )
         self._recording = False
         self._record_start_timestamp = None
-        self._record_path = None
-        self._record_timestamps = []
-        self._record_channels = []
-        self._record_flow_velocity = []
-        self.control.set_recording(False, f"已保存 {timestamps.size} 行")
-        if not path:
+        writer = self._record_writer
+        if writer is None:
+            self.control.set_recording(False, "未生成 CSV")
             return
-        try:
-            from .data_buffer import BufferSnapshot
-
-            export_snapshot(BufferSnapshot(timestamps, channels, flow_velocity), path)
-            self._log(f"CSV 保存完成: {path}，{timestamps.size} 行")
-        except Exception as exc:
-            self.control.set_recording(False, "保存失败")
-            self._log(f"CSV 保存失败: {exc}")
+        self.control.set_recording_finalizing("正在完成 CSV 写入...")
+        writer.finish()
+        self._log("采集结束，正在完成剩余 CSV 写入")
 
     def _timeline_pressed(self) -> None:
         self.auto_scroll = False
@@ -352,10 +347,19 @@ class MainWindow(QMainWindow):
             channels = channels[keep]
             elapsed = elapsed[keep]
 
-        self._record_timestamps.append(timestamps.copy())
-        self._record_channels.append(channels.copy())
         velocity = float(self.latest_velocity) if self.latest_velocity is not None else np.nan
-        self._record_flow_velocity.append(np.full(timestamps.size, velocity, dtype=float))
+        writer = self._record_writer
+        if writer is None:
+            return
+        try:
+            writer.append(timestamps, channels, np.full(timestamps.size, velocity, dtype=float))
+        except Exception as exc:
+            self._recording = False
+            self._record_start_timestamp = None
+            writer.finish()
+            self.control.set_recording_finalizing("正在完成 CSV 写入...")
+            self._log(f"CSV 写入队列失败: {exc}")
+            return
 
         last_elapsed = float(elapsed[-1])
         if self._record_duration_seconds > 0:
@@ -365,6 +369,21 @@ class MainWindow(QMainWindow):
                 self._stop_recording()
         else:
             self.control.set_recording(True, f"正在保存: {last_elapsed:.1f} 秒")
+
+    def _thread_csv_finished(self, path: str, count: int, error: Exception | None) -> None:
+        self.csv_finished_signal.emit(path, count, error)
+
+    def _on_csv_writer_finished(self, path: str, count: int, error: Exception | None) -> None:
+        self._record_writer = None
+        self._record_path = None
+        if error is not None:
+            self._recording = False
+            self._record_start_timestamp = None
+            self.control.set_recording(False, "保存失败")
+            self._log(f"CSV 保存失败: {error}")
+            return
+        self.control.set_recording(False, f"已保存 {count} 行")
+        self._log(f"CSV 保存完成: {path}，{count} 行")
 
     def _refresh_plot(self) -> None:
         if self.visible_end <= self.visible_start:
@@ -388,13 +407,29 @@ class MainWindow(QMainWindow):
         self.matlab.start()
         self.matlab.submit(snapshot.channels, self.config.sample_rate_hz)
 
-    def _on_matlab_result(self, velocity: float, hwnd: int | None) -> None:
+    def _on_matlab_result(self, velocity: float, hwnd: int | None, plot_data=None) -> None:
         self.latest_velocity = velocity
         self.buffer.set_flow_for_latest(velocity, max(1, self.config.sample_rate_hz // 10))
         self.plot.set_velocity(velocity)
         self.velocity_status.setText(f"流速 {velocity:.3f} m/s" if np.isfinite(velocity) else "流速 --")
+        if plot_data is not None:
+            self._show_python_algorithm_plot()
+            self.python_algorithm_plot.update_data(plot_data)
         if hwnd:
             self._embed_window(hwnd)
+
+    def _show_python_algorithm_plot(self) -> None:
+        layout = self.matlab_frame.layout()
+        if layout.indexOf(self.python_algorithm_plot) < 0:
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget:
+                    widget.setParent(None)
+            layout.addWidget(self.python_algorithm_plot)
+        self.python_algorithm_plot.show()
+        self.matlab_hint.hide()
+        self._embedded_hwnd = None
 
     def _embed_window(self, hwnd: int) -> None:
         if sys.platform != "win32" or self._embedded_hwnd == hwnd:
@@ -433,6 +468,8 @@ class MainWindow(QMainWindow):
         self.timer.stop()
         if self._recording:
             self._stop_recording()
+        if self._record_writer is not None:
+            self._record_writer.wait(timeout=2.0)
         self.receiver.stop()
         self.matlab.stop()
         event.accept()

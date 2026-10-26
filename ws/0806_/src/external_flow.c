@@ -1,5 +1,4 @@
 #include "external_flow.h"
-#include "can.h"
 
 #include <stdint.h>
 
@@ -100,7 +99,6 @@ static void gpio_interrupt_callback(void *callback, u32 bank, u32 status)
     uint64_t now_us;
 
     (void)callback;
-    can_gpio_interrupt(bank, status);
     if (bank != 0U || (status & (1U << EXT_FLOW_INPUT_MIO)) == 0U) {
         return;
     }

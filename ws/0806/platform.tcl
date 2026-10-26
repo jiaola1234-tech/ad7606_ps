@@ -31,3 +31,6 @@ platform generate
 platform active {0806}
 platform active {0806}
 platform active {0806}
+platform clean
+platform generate
+platform generate

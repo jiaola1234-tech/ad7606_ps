@@ -1039,31 +1039,6 @@ static void gain_auto_service(void)
     }
 }
 
-static void temperature_publish(void)
-{
-    static uint64_t last_write_ms;
-    static u32 last_reports;
-    static u16 last_status = 0xFFFFU;
-    static s16 last_value;
-    SimCanTemperature temperature;
-    uint64_t now = get_time_ms();
-    can_get_temperature(&temperature);
-    if (temperature.status == last_status &&
-        (now - last_write_ms < 1000ULL ||
-         (temperature.reports == last_reports &&
-          temperature.centi_celsius == last_value &&
-          now - last_write_ms < 5000ULL))) {
-        return;
-    }
-    if (rs485_modbus_write_temperature(temperature.centi_celsius,
-                                       temperature.status) == XST_SUCCESS) {
-        last_write_ms = now;
-        last_reports = temperature.reports;
-        last_status = temperature.status;
-        last_value = temperature.centi_celsius;
-    }
-}
-
 static void pulse_config_apply(uint16_t volume_milliliter,
                                uint16_t count,
                                uint16_t width_us)
@@ -1111,7 +1086,7 @@ static int gain_init(void)
     Rs485GainControls gain_controls;
     Rs485ManualCalibrationControls manual_controls;
 
-    status = can_init(rs485_modbus_gpio(), &interrupt_controller);
+    status = can_init(rs485_modbus_gpio());
     if (status != XST_SUCCESS) {
 #if FW_DEBUG
         xil_printf("GAIN init failed: can_init status=%d\r\n", status);
@@ -1159,7 +1134,6 @@ static int gain_init(void)
             (u16)(calibration_state.fit_k * 1000.0f + 0.5f),
             (u16)(calibration_state.fit_b * 1000.0f + 0.5f));
     }
-    temperature_publish();
     return XST_SUCCESS;
 }
 
@@ -1745,7 +1719,6 @@ static void run_acquisition_loop(void)
             pulse_config_sync();
             calibration_poll_controls();
             gain_poll_controls();
-            temperature_publish();
         }
         calibration_refresh_collecting_status();
 

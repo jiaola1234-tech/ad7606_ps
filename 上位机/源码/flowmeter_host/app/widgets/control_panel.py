@@ -75,7 +75,10 @@ class ControlPanel(QWidget):
 
         self.algorithm_backend_combo = QComboBox()
         self.algorithm_backend_combo.addItems(["Python", "MATLAB"])
-        self.algorithm_backend_combo.setCurrentText("Python")
+        # The supplied ana95.m creates the MUSIC/energy/velocity figures only
+        # through MATLAB.  MATLAB is still optional: the worker falls back to
+        # the Python velocity calculation when it is unavailable.
+        self.algorithm_backend_combo.setCurrentText("MATLAB")
         self.matlab_button = QPushButton("选择 MATLAB 算法")
         self.matlab_path_label = QLabel("未选择")
         self.matlab_path_label.setWordWrap(True)
@@ -161,6 +164,13 @@ class ControlPanel(QWidget):
         self.record_start_button.setEnabled(not recording)
         self.record_stop_button.setEnabled(recording)
         self.record_duration.setEnabled(not recording)
+        self.record_status_label.setText(text)
+
+    def set_recording_finalizing(self, text: str) -> None:
+        """Keep both recording actions disabled while the writer drains."""
+        self.record_start_button.setEnabled(False)
+        self.record_stop_button.setEnabled(False)
+        self.record_duration.setEnabled(False)
         self.record_status_label.setText(text)
 
     def _line(self) -> QFrame:

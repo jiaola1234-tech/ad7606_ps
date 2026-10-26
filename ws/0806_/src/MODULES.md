@@ -11,7 +11,7 @@
 - `ad7606_dma.c/.h`: AD7606 start registers, 50 kHz AXI DMA, raw-data ring buffers, four-pole anti-alias filtering, 25:1 algorithm decimation and error recovery. TCP transmission keeps the original 50 kHz samples.
 - `tcp_stream.c/.h`: lwIP TCP server, network polling and raw ADC block transmission. Address: `192.168.1.10:5001`.
 - `rs485_modbus.c/.h`: UART0, MIO41 RS485 direction control, Modbus display data and reset-button polling. Format: `9600 8O1`.
-- `can.c/.h`: simulated-CAN gain modes 1-10 on MIO9 -> STM32 PA11, and temperature/fault reception on STM32 PA12 -> MIO10. RX uses TTC2 and the shared GPIO callback; this is not ISO CAN.
+- `can.c/.h`: gain modes 1-10 on MIO9 -> STM32 PA11 using the custom GPIO protocol. The temperature/PA12/MIO10 path is removed; this is not ISO CAN.
 - `flow_pulse.c/.h`: calculated-flow integration and MIO15 pulse output. One 20 ms pulse is generated per accumulated liter.
 - `external_flow.c/.h`: MIO14 external pulse input, GPIO interrupt, TTC0 periodic calculation and comparison-flow statistics. Default: 600 pulses per liter. Once the accumulated raw flow reaches 0.05 L, `calibration_factor` is also updated as `standard_total_liter / raw_total_liter` for comparison diagnostics; the active velocity result continues to use the fitted K/B calibration.
 - `interrupt_controller.c/.h`: shared PS GIC initialization. Feature modules connect their own interrupt handlers afterward.

@@ -16,7 +16,7 @@ import numpy as np
 
 
 LogCallback = Callable[[str], None]
-ResultCallback = Callable[[float, int | None], None]
+ResultCallback = Callable[[float, int | None, object | None], None]
 
 
 @dataclass
@@ -25,12 +25,24 @@ class MatlabTask:
     sample_rate_hz: int
 
 
+@dataclass
+class AlgorithmPlotData:
+    """Diagnostics produced by the Python MUSIC backend for native plotting."""
+
+    frequencies: np.ndarray
+    k_axis: np.ndarray
+    spectrum_db: np.ndarray
+    velocities: np.ndarray
+    energy: np.ndarray
+    velocity: float
+
+
 class MatlabAlgorithmWorker:
     """Runs either the MATLAB ana*.m function or a Python MUSIC implementation."""
 
     def __init__(self, log: LogCallback | None = None, result: ResultCallback | None = None):
         self.log = log or (lambda _message: None)
-        self.result = result or (lambda _velocity, _hwnd: None)
+        self.result = result or (lambda _velocity, _hwnd, _plot_data: None)
         self.backend = "Python"
         self.algorithm_path: Path | None = None
         self.function_name: str | None = None
@@ -53,7 +65,10 @@ class MatlabAlgorithmWorker:
         self.backend = "MATLAB" if backend.upper() == "MATLAB" else "Python"
         if self.backend == "Python":
             self._close_matlab_sessions()
-        self.log(f"算法后端已切换为 {self.backend}")
+        if self.backend == "MATLAB":
+            self.log("算法后端已切换为 MATLAB；MUSIC/能量积分/流速历史图将在 MATLAB 图窗中显示")
+        else:
+            self.log("算法后端已切换为 Python；当前后端只输出流速，不生成 MATLAB MUSIC 图窗")
 
     def load_algorithm(self, path: str | os.PathLike[str]) -> None:
         source = Path(path).resolve()
@@ -132,26 +147,26 @@ class MatlabAlgorithmWorker:
             except queue.Empty:
                 continue
             try:
-                velocity = self._calculate(task)
+                velocity, plot_data = self._calculate(task)
                 hwnd = self._find_matlab_window() if self.backend == "MATLAB" else None
-                self.result(float(velocity), hwnd)
+                self.result(float(velocity), hwnd, plot_data)
             except Exception as exc:
                 self.log(f"{self.backend} 算法运行失败: {exc}")
 
-    def _calculate(self, task: MatlabTask) -> float:
+    def _calculate(self, task: MatlabTask) -> tuple[float, AlgorithmPlotData | None]:
         if self.backend == "Python":
-            return python_music_velocity(task.data_nx8, task.sample_rate_hz)
+            return python_music_analysis(task.data_nx8, task.sample_rate_hz)
 
         engine = self._ensure_engine()
         if engine is not None and self.function_name:
-            return self._calculate_with_engine(engine, task)
+            return self._calculate_with_engine(engine, task), None
 
         com_app = self._ensure_com_app()
         if com_app is not None and self.function_name:
-            return self._calculate_with_com(com_app, task)
+            return self._calculate_with_com(com_app, task), None
 
         self.log("MATLAB 不可用，临时使用 Python 算法")
-        return python_music_velocity(task.data_nx8, task.sample_rate_hz)
+        return python_music_analysis(task.data_nx8, task.sample_rate_hz)
 
     def _ensure_engine(self):
         if self._engine is not None:
@@ -258,16 +273,21 @@ class MatlabAlgorithmWorker:
 
 
 def python_music_velocity(data_nx8: np.ndarray, sample_rate_hz: int) -> float:
+    velocity, _plot_data = python_music_analysis(data_nx8, sample_rate_hz)
+    return velocity
+
+
+def python_music_analysis(data_nx8: np.ndarray, sample_rate_hz: int) -> tuple[float, AlgorithmPlotData | None]:
     data = np.asarray(data_nx8, dtype=float)
     if data.ndim != 2 or data.shape[1] < 2:
-        return float("nan")
+        return float("nan"), None
 
     channels = min(8, data.shape[1])
     data = data[:, :channels]
     sample_rate_hz = max(1, int(sample_rate_hz))
     window_len = min(data.shape[0], max(8, int(round(sample_rate_hz * 2.0))))
     if window_len < 8:
-        return float("nan")
+        return float("nan"), None
     data = data[-window_len:]
 
     sensor_spacing = 0.0605
@@ -285,7 +305,7 @@ def python_music_velocity(data_nx8: np.ndarray, sample_rate_hz: int) -> float:
     f_axis = f_axis_full[mask]
     spectrum = spectrum[mask].T
     if f_axis.size == 0:
-        return float("nan")
+        return float("nan"), None
 
     positions = np.arange(channels, dtype=float) * sensor_spacing
     k_axis = np.linspace(-2.0 * np.pi / sensor_spacing, 2.0 * np.pi / sensor_spacing, num_k)
@@ -333,7 +353,15 @@ def python_music_velocity(data_nx8: np.ndarray, sample_rate_hz: int) -> float:
     hi = min(u_opt * 1.05, u_trials[-1])
     fine = np.linspace(lo, hi, 50)
     fine_energy = np.interp(fine, u_trials, energy)
-    return float(fine[int(np.nanargmax(fine_energy))])
+    velocity = float(fine[int(np.nanargmax(fine_energy))])
+    return velocity, AlgorithmPlotData(
+        frequencies=f_axis,
+        k_axis=k_axis,
+        spectrum_db=p_use,
+        velocities=u_trials,
+        energy=energy,
+        velocity=velocity,
+    )
 
 
 def _moving_average(values: np.ndarray, width: int) -> np.ndarray:

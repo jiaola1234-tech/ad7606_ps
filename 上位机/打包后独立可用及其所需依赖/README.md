@@ -11,4 +11,10 @@
 
 ## 使用方式
 
-双击 `SonarFlowMeterHost.exe` 运行。软件可以在没有 MATLAB 的情况下使用 Python 后端完成采集、显示和 CSV 导出；若要调用真实 MATLAB 算法和图窗，目标电脑需要安装并授权 MATLAB。
+双击 `SonarFlowMeterHost.exe` 运行。界面默认选择 MATLAB 后端，目标电脑安装并授权 MATLAB 后会显示 MATLAB 算法图窗；选择 Python 后端，或 MATLAB 不可用时自动回退 Python，右侧仍会显示内置的 MUSIC 谱、速度能量积分和流速历史图。
+
+如果旧快捷方式仍提示 `DLL load failed while importing QtCore`，请使用目录 `SonarFlowMeterHost_fixed_20261023` 中的 `启动上位机.bat`。这是带 Qt DLL 搜索路径的修复版，不要继续打开旧桌面快捷方式。
+
+算法图需要先累计约 2 秒数据；数据不足时右侧图区域会保持空白，达到分析长度后每约 2 秒刷新一次。
+
+连接板端时选择 `TCP Client`，默认地址为 `192.168.1.10:5001`。板端启动或网口链路稍慢时，上位机会每 1 秒自动重试；运行中断线也会自动重连。

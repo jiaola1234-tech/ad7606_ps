@@ -6,10 +6,8 @@
 /* 0: screen/RS485 only; 1: also enable the Ethernet TCP stream. */
 #define ENABLE_TCP_STREAM         1
 
-/* New temperature return wire: STM32 PA12 -> Zynq MIO10, common GND.
- * The existing command wire remains MIO9 -> STM32 PA11. */
+/* Gain command wire: Zynq MIO9 -> STM32 PA11. */
 #define SIM_CAN_TX_MIO            9U
-#define SIM_CAN_RX_MIO            10U
 #define GAIN_INITIAL_MODE         5U
 #define GAIN_SETTLE_MS            100U
 #define GAIN_AUTO_COOLDOWN_MS     500ULL
@@ -19,7 +17,6 @@
 #define GAIN_AUTO_HIGH_PEAK       (32768.0f * 0.88f)
 #define GAIN_AUTO_NEXT_RMS_LIMIT  (32768.0f * 0.30f)
 #define GAIN_AUTO_NEXT_PEAK_LIMIT (32768.0f * 0.70f)
-#define SIM_CAN_TEMP_TIMEOUT_MS   3000ULL
 
 #define NUM_CHANNELS              8
 #define ADC_SAMPLE_RATE_HZ        50000U

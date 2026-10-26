@@ -25,6 +25,40 @@ static volatile int active_slot = -1;
 static volatile u32 drop_count;
 static int netif_ready;
 
+static err_t tcp_connection_recv(void *arg, struct tcp_pcb *tpcb,
+                                 struct pbuf *p, err_t err)
+{
+    (void)arg;
+    (void)err;
+    if (p == NULL) {
+        if (connected_pcb == tpcb) {
+            connected_pcb = NULL;
+            active_slot = -1;
+            bytes_to_send = 0U;
+            send_offset = 0U;
+        }
+        tcp_close(tpcb);
+        return ERR_OK;
+    }
+
+    tcp_recved(tpcb, p->tot_len);
+    pbuf_free(p);
+    return ERR_OK;
+}
+
+static void tcp_connection_error(void *arg, err_t err)
+{
+    struct tcp_pcb *pcb = (struct tcp_pcb *)arg;
+    (void)arg;
+    (void)err;
+    if (connected_pcb == pcb) {
+        connected_pcb = NULL;
+        active_slot = -1;
+        bytes_to_send = 0U;
+        send_offset = 0U;
+    }
+}
+
 static err_t tcp_accept_callback(void *arg, struct tcp_pcb *new_pcb, err_t err)
 {
     (void)arg;
@@ -34,6 +68,9 @@ static err_t tcp_accept_callback(void *arg, struct tcp_pcb *new_pcb, err_t err)
 
     connected_pcb = new_pcb;
     new_pcb->flags |= TF_NODELAY;
+    tcp_arg(new_pcb, new_pcb);
+    tcp_recv(new_pcb, tcp_connection_recv);
+    tcp_err(new_pcb, tcp_connection_error);
     return ERR_OK;
 }
 
@@ -117,6 +154,11 @@ void tcp_stream_poll(void)
                 tcp_output(connected_pcb);
                 send_offset += chunk;
                 bytes_to_send -= chunk;
+            } else if (err == ERR_ABRT || err == ERR_RST || err == ERR_CLSD) {
+                connected_pcb = NULL;
+                active_slot = -1;
+                bytes_to_send = 0U;
+                send_offset = 0U;
             }
         }
     }

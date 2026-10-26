@@ -40,7 +40,6 @@
 #define GAIN_COMMAND_START_REG      140U    /* 4WUB0141 */
 #define GAIN_COMMAND_REG_COUNT      5U
 #define GAIN_APPLY_REG              141U    /* 4WUB0142 */
-#define TEMPERATURE_VALUE_REG       142U    /* 4WUB0143 */
 #define ADAPTIVE_GAIN_COMMAND_REG   144U    /* 4WUB0145 */
 #define PULSE_VOLUME_REG            149U    /* 4WUB0150: 脉冲体积(mL) */
 #define PULSE_COUNT_REG             150U    /* 4WUB0151: 脉冲个数 */
@@ -543,13 +542,6 @@ int rs485_modbus_clear_adaptive_gain(void)
 {
     delay_loop(COMMAND_GAP_DELAY_COUNT);
     return write_single_register(ADAPTIVE_GAIN_COMMAND_REG, 0U);
-}
-
-int rs485_modbus_write_temperature(s16 centi_celsius, u16 status)
-{
-    uint16_t values[2] = {(u16)centi_celsius, status != 0U ? 1U : 0U};
-    delay_loop(COMMAND_GAP_DELAY_COUNT);
-    return write_registers(TEMPERATURE_VALUE_REG, values, 2U);
 }
 
 int rs485_modbus_write_gain_status(u16 gain_stage)

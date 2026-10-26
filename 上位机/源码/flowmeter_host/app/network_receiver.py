@@ -10,6 +10,9 @@ from typing import Callable
 LogCallback = Callable[[str], None]
 
 
+TCP_CONNECT_RETRY_SECONDS = 1.0
+
+
 @dataclass
 class ReceiverConfig:
     mode: str
@@ -111,14 +114,35 @@ class NetworkReceiver:
                 self.output_queue.put(data)
 
     def _run_tcp_client(self, config: ReceiverConfig) -> None:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._set_socket(sock)
         self.log(f"TCP Client 连接 {config.ip}:{config.port}")
-        sock.connect((config.ip, config.port))
-        with self._lock:
-            self._client_sock = sock
-        self.log("TCP Client 已连接")
-        self._recv_stream(sock)
+        while not self._stop_event.is_set():
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # A short connect timeout keeps a dead cable/wrong IP from
+            # blocking shutdown, while the loop handles a board that is still
+            # booting or bringing its Ethernet link up.
+            sock.settimeout(1.0)
+            self._set_socket(sock)
+            try:
+                sock.connect((config.ip, config.port))
+            except OSError as exc:
+                self._close_socket(sock)
+                if self._stop_event.is_set():
+                    break
+                self.log(
+                    f"TCP Client 连接失败: {exc}；{TCP_CONNECT_RETRY_SECONDS:g} 秒后自动重试"
+                )
+                self._stop_event.wait(TCP_CONNECT_RETRY_SECONDS)
+                continue
+
+            with self._lock:
+                self._client_sock = sock
+            sock.settimeout(0.5)
+            self.log("TCP Client 已连接")
+            self._recv_stream(sock)
+            self._close_socket(sock)
+            if not self._stop_event.is_set():
+                self.log(f"TCP 连接已断开；{TCP_CONNECT_RETRY_SECONDS:g} 秒后自动重连")
+                self._stop_event.wait(TCP_CONNECT_RETRY_SECONDS)
 
     def _run_tcp_server(self, config: ReceiverConfig) -> None:
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -152,7 +176,26 @@ class NetworkReceiver:
                 chunk = sock.recv(65535)
             except socket.timeout:
                 continue
+            except OSError as exc:
+                if not self._stop_event.is_set():
+                    self.log(f"TCP 接收错误: {exc}")
+                break
             if not chunk:
                 self.log("TCP 连接已断开")
                 break
             self.output_queue.put(chunk)
+
+    def _close_socket(self, sock: socket.socket) -> None:
+        with self._lock:
+            if self._sock is sock:
+                self._sock = None
+            if self._client_sock is sock:
+                self._client_sock = None
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            sock.close()
+        except OSError:
+            pass
